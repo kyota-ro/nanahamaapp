@@ -193,7 +193,7 @@ main {
   flex: 1 1 0;
   height: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   background:
     linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px) 0 0 / 90px 90px,
     #1a1b1f;
@@ -302,7 +302,7 @@ main {
 
 .overview-map {
   height: 100%;
-  min-height: 360px;
+  min-height: 2800px;
 }
 
 .segment,
@@ -496,13 +496,21 @@ main {
 }
 
 .overview-map .train {
-  width: 13px;
-  min-height: 13px;
-  border-radius: 50%;
-  clip-path: none;
+  width: 22px;
+  min-height: 26px;
+  border-radius: 5px;
+  clip-path: polygon(16% 0, 84% 0, 100% 22%, 100% 78%, 50% 100%, 0 78%, 0 22%);
   padding: 0;
-  border: 1px solid #fff;
+  border: 2px solid #fff;
   overflow: hidden;
+}
+
+.overview-map .train.up {
+  clip-path: polygon(50% 0, 100% 22%, 100% 78%, 84% 100%, 16% 100%, 0 78%, 0 22%);
+}
+
+.overview-map .train.down {
+  clip-path: polygon(16% 0, 84% 0, 100% 22%, 100% 78%, 50% 100%, 0 78%, 0 22%);
 }
 
 .overview-map .train .arrow {
@@ -723,8 +731,8 @@ main {
 
 .platform-groups {
   position: absolute;
-  left: 14px;
-  right: 14px;
+  left: 0;
+  right: 0;
   bottom: 39px;
   height: 18px;
   display: grid;
@@ -743,17 +751,17 @@ main {
 
 .platform-cells {
   position: absolute;
-  left: 14px;
-  right: 14px;
+  left: 0;
+  right: 0;
   bottom: 8px;
   height: 30px;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
   background: rgba(255,255,255,.08);
 }
 
 .platform-cells span {
+  position: absolute;
+  top: 0;
+  height: 30px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
