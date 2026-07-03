@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ななはま鉄道 しょみん線 列車走行位置</title>
+  <link rel="stylesheet" href="./nanahama-shomin.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <p class="brand">ななはま鉄道</p>
+        <h1>しょみん線 列車走行位置</h1>
+      </div>
+      <div class="clock">
+        <span id="dateText"></span>
+        <strong id="timeText"></strong>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="主要メニュー">
+      <button class="tab active" data-view="position">列車走行位置</button>
+      <button class="tab" data-view="routes">路線一覧</button>
+      <button class="tab" data-view="status">運行情報</button>
+      <button class="tab" data-view="timetable">時刻表</button>
+    </nav>
+
+    <main>
+      <section class="status-strip">
+        <div>
+          <span class="status-dot"></span>
+          <strong>しょみん線</strong>
+          <span>平常運転</span>
+        </div>
+        <div class="legend">
+          <span><i class="swatch magenta"></i>宮ノ路線・快速線</span>
+          <span><i class="swatch emerald"></i>各駅停車</span>
+          <span><i class="swatch airport"></i>戸羽空港直通</span>
+        </div>
+      </section>
+
+      <section class="controls position-view" aria-label="表示切替">
+        <button id="overviewBtn" class="mode active" type="button">全体</button>
+        <button id="zoomBtn" class="mode" type="button">拡大</button>
+        <button id="refreshBtn" class="icon-button" type="button" aria-label="更新">↻</button>
+      </section>
+
+      <section id="railPanel" class="rail-panel overview position-view">
+        <div id="overviewMap" class="overview-map" aria-label="しょみん線全体図"></div>
+        <div id="zoomMap" class="zoom-map" aria-label="しょみん線拡大図"></div>
+      </section>
+
+      <section id="routesView" class="info-page app-view">
+        <h2>路線一覧</h2>
+        <div class="route-grid">
+          <article data-line="rapid" data-jump="position"><strong>しょみん線快速電車</strong></article>
+          <article data-line="local" data-jump="position"><strong>しょみん線各駅停車</strong></article>
+          <article data-line="rapid" data-jump="position"><strong>しょみん宮ノ路線</strong></article>
+          <article data-line="airport" data-jump="position"><strong>戸羽空港線</strong></article>
+          <article data-line="limited" data-jump="position"><strong>しょみん線特急</strong></article>
+          <article><strong>森林線</strong></article>
+          <article><strong>海ノ路線</strong></article>
+          <article><strong>山武線</strong></article>
+          <article><strong>みらいじま線</strong></article>
+          <article><strong>七都市線</strong></article>
+          <article><strong>元山線</strong></article>
+          <article><strong>みなと坂線</strong></article>
+          <article><strong>枝森線</strong></article>
+          <article><strong>花取りんかい線</strong></article>
+          <article><strong>ひがし環状線</strong></article>
+          <article><strong>ひがし中央線</strong></article>
+          <article><strong>鎌戸空港線</strong></article>
+        </div>
+      </section>
+
+      <section id="statusView" class="info-page app-view">
+        <h2>運行情報</h2>
+        <div class="notice-card good"><strong>しょみん線</strong><span>平常運転しています。</span></div>
+        <div class="notice-card"><strong>お知らせ</strong><span>この画面は試作版です。列車位置は現在時刻から自動生成しています。</span></div>
+      </section>
+
+      <section id="timetableView" class="info-page app-view">
+        <h2>時刻表</h2>
+        <div class="timetable-grid">
+          <article><strong>宮ノ路線普通</strong><span>15分間隔</span><small>赤島原 - 江川、8両。板沼折り返しあり</small></article>
+          <article><strong>しょみん線各駅停車</strong><span>10分間隔</span><small>11両。大吹止まり、元山線直通、東ノ宮直通を設定</small></article>
+          <article><strong>しょみん線快速</strong><span>高頻度運転</span><small>江川 - 新桜浜区間列車と東ノ宮方面直通を交互に近い形で設定</small></article>
+          <article><strong>しょみん線特急</strong><span>40分間隔</span><small>12両。東ノ宮で分割・併合し、みらいじま線・山武線へ直通</small></article>
+          <article><strong>戸羽空港線直通</strong><span>15分間隔</span><small>船戸から戸羽空港線へ直通、空港で15分停車</small></article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="trainDialog" class="train-dialog">
+    <button id="closeDialog" class="close-button" type="button" aria-label="閉じる">×</button>
+    <div id="dialogBody"></div>
+  </dialog>
+
+  <script src="./nanahama-shomin.js"></script>
+</body>
+</html>
