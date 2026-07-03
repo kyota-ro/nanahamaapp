@@ -112,6 +112,7 @@ function addRoutePair(routes, base) {
     start: base.stops[0],
     end: base.stops.at(-1),
     offset: base.offset || 0,
+    terminalLayover: base.terminalLayover ?? turnbackSeconds,
   });
   routes.push({
     ...base,
@@ -122,6 +123,7 @@ function addRoutePair(routes, base) {
     end: base.stops[0],
     offset: base.returnOffset ?? Math.round(base.interval / 2),
     destCycle: base.upDestCycle || base.destCycle,
+    terminalLayover: base.terminalLayover ?? turnbackSeconds,
   });
 }
 
@@ -137,7 +139,7 @@ function buildServiceRoutes() {
     laneA: "miyanoDown",
     laneB: "miyanoUp",
     stops: mainIds(1, 16),
-    interval: 15 * 60,
+    interval: 20 * 60,
     cars: 8,
     terminalLayover: turnbackSeconds,
     note: "赤島原 - 江川間を運転します。",
@@ -149,8 +151,8 @@ function buildServiceRoutes() {
     line: "miyano",
     laneA: "miyanoDown",
     laneB: "miyanoUp",
-    stops: mainIds(1, 8),
-    interval: 30 * 60,
+    stops: mainIds(16, 8),
+    interval: 40 * 60,
     cars: 8,
     offset: 10 * 60,
     returnOffset: 23 * 60,
@@ -181,12 +183,67 @@ function buildServiceRoutes() {
     laneA: "rapidDownB",
     laneB: "rapidUpB",
     stops: filteredMainIds(16, 36, "rapid"),
-    interval: 8 * 60,
+    interval: 4 * 60,
     cars: 15,
     offset: 2 * 60,
     returnOffset: 6 * 60,
     terminalLayover: turnbackSeconds,
     note: "新桜浜で折り返します。",
+  });
+  addRoutePair(routes, {
+    key: "rapid-ohashi",
+    label: "快速",
+    color: "rapid",
+    line: "rapid",
+    laneA: "rapidDownA",
+    laneB: "rapidUpA",
+    stops: filteredMainIds(16, 15, "rapid"),
+    interval: 240 * 60,
+    cars: 15,
+    offset: 10 * 60,
+    returnOffset: 14 * 60,
+    terminalLayover: turnbackSeconds,
+    destCycle: ["大橋"],
+    upDestCycle: ["江川"],
+    note: "大橋で折り返し、江川で回送となります。",
+  });
+  routes.push({
+    key: "rapid-east-ohashi-up",
+    label: "快速",
+    color: "rapid",
+    line: "rapid",
+    direction: "up",
+    laneA: "rapidDownA",
+    laneB: "rapidUpA",
+    stops: filteredMainIds(42, 15, "rapid"),
+    start: 42,
+    end: 15,
+    interval: 8 * 60,
+    cars: 15,
+    offset: 6 * 60,
+    terminalLayover: turnbackSeconds,
+    destCycle: ["大橋"],
+    nextDestination: "江川",
+    nextStops: [15, 16],
+    nextDirection: "down",
+    note: "大橋で折り返し、江川で回送となります。",
+  });
+  routes.push({
+    key: "rapid-ohashi-egawa-down",
+    label: "快速",
+    color: "rapid",
+    line: "rapid",
+    direction: "down",
+    laneA: "rapidDownA",
+    laneB: "rapidUpA",
+    stops: [15, 16],
+    start: 15,
+    end: 16,
+    interval: 8 * 60,
+    cars: 15,
+    offset: 9 * 60,
+    destCycle: ["江川"],
+    note: "江川到着後、回送となります。",
   });
   addRoutePair(routes, {
     key: "rapid-akashimabara",
@@ -196,7 +253,7 @@ function buildServiceRoutes() {
     laneA: "rapidDownA",
     laneB: "rapidUpA",
     stops: filteredMainIds(1, 42, "rapid"),
-    interval: 20 * 60,
+    interval: 40 * 60,
     cars: 15,
     offset: 5 * 60,
     returnOffset: 15 * 60,
@@ -212,8 +269,8 @@ function buildServiceRoutes() {
     line: "rapid",
     laneA: "rapidDownB",
     laneB: "rapidUpB",
-    stops: [1, 8, 16, 17, 22, 26, 29, 33, 38, 40, 42],
-    interval: 20 * 60,
+    stops: [1, 2, 3, 4, 5, 6, 7, 8, 15, 16, 17, 22, 38, 40, 41, 42],
+    interval: 40 * 60,
     cars: 15,
     offset: 11 * 60,
     returnOffset: 1 * 60,
@@ -247,7 +304,7 @@ function buildServiceRoutes() {
     laneA: "localDown",
     laneB: "localUp",
     stops: mainIds(16, 38),
-    interval: 10 * 60,
+    interval: 6 * 60,
     cars: 11,
     offset: 90,
     returnOffset: 6 * 60,
@@ -296,7 +353,7 @@ function buildServiceRoutes() {
     laneA: "expressDown",
     laneB: "expressUp",
     stops: limitedStops,
-    interval: 40 * 60,
+    interval: 80 * 60,
     cars: 12,
     offset: 12 * 60,
     returnOffset: 32 * 60,
@@ -326,12 +383,16 @@ function buildServiceRoutes() {
 }
 
 const serviceRoutes = buildServiceRoutes();
+serviceRoutes.forEach((route) => {
+  if (route.key === "rapid-ohashi-egawa-down") route.terminalLayover = 5 * 60;
+});
 
 function stopDwell(route, stopId, index) {
   const passingWait = passingWaitSeconds(route, stopId);
   if (passingWait) return Math.max(dwellSeconds, passingWait);
   if (route.specialDwell?.[stopId]) return route.specialDwell[stopId];
-  if (index === route.stops.length - 1) return route.terminalLayover ? 30 : dwellSeconds;
+  if (index === route.stops.length - 1) return route.terminalLayover || dwellSeconds;
+  if (["rapid", "local", "limited", "airport"].includes(route.line)) return Math.max(dwellSeconds, 2 * 60);
   return dwellSeconds;
 }
 
@@ -367,21 +428,30 @@ function travelSecondsBetween(from, to) {
   return Math.max(60, total - discount * 60);
 }
 
+function travelSecondsForTrain(route, from, to) {
+  const base = travelSecondsBetween(from, to);
+  if (route.line === "limited" && typeof from === "number" && typeof to === "number") {
+    const low = Math.min(from, to);
+    if (low >= 36) return Math.ceil(base * 1.35);
+  }
+  return base;
+}
+
 function isTerminalDwell(train, progress) {
   return progress.dwelling && progress.stopIndex === train.stops.length - 1;
 }
 
 function isDepotAfterArrival(train, progress) {
   if (!isTerminalDwell(train, progress)) return false;
+  if (train.key.includes("rapid-ohashi-egawa")) return true;
+  if (train.key.includes("rapid-ohashi-up") && train.end === 16) return true;
   if (train.terminalLayover) return false;
-  if (train.key.includes("miyano-local") && train.end === 16) return Math.floor(train.departure / train.interval) % 4 === 0;
-  if (train.key.includes("local-main") && train.end === 16) return Math.floor(train.departure / train.interval) % 5 === 0;
-  return !train.terminalLayover;
+  return train.end === 16;
 }
 
 function journeySeconds(route) {
   return route.stops.reduce((total, stop, index) => {
-    const travel = index < route.stops.length - 1 ? travelSecondsBetween(stop, route.stops[index + 1]) : 0;
+    const travel = index < route.stops.length - 1 ? travelSecondsForTrain(route, stop, route.stops[index + 1]) : 0;
     return total + stopDwell(route, stop, index) + travel;
   }, 0);
 }
@@ -403,7 +473,43 @@ function generateTrains(now) {
       }
     }
   });
-  return list;
+  return enforceDispatchSpacing(list);
+}
+
+function segmentDepartureTime(train, stopIndex) {
+  let elapsed = 0;
+  for (let i = 0; i <= stopIndex; i += 1) {
+    elapsed += stopDwell(train, train.stops[i], i);
+    if (i < stopIndex) elapsed += travelSecondsForTrain(train, train.stops[i], train.stops[i + 1]);
+  }
+  return train.departure + elapsed;
+}
+
+function trainBlockKey(train) {
+  const progress = trainProgress(train);
+  const lane = effectiveLane(train, progress);
+  if (progress.dwelling) {
+    const from = progress.from;
+    const to = train.stops[progress.stopIndex + 1] ?? progress.from;
+    return { key: `${lane}:${train.direction}:${from}-${to}`, time: segmentDepartureTime(train, progress.stopIndex), lane };
+  }
+  return { key: `${lane}:${train.direction}:${progress.from}-${progress.to}`, time: segmentDepartureTime(train, progress.stopIndex), lane };
+}
+
+function enforceDispatchSpacing(list) {
+  const minGap = 2 * 60;
+  const kept = [];
+  const seen = new Map();
+  [...list]
+    .sort((a, b) => trainBlockKey(a).time - trainBlockKey(b).time)
+    .forEach((train) => {
+      const block = trainBlockKey(train);
+      const previous = seen.get(block.key);
+      if (previous != null && Math.abs(block.time - previous) < minGap) return;
+      seen.set(block.key, block.time);
+      kept.push(train);
+    });
+  return kept;
 }
 
 function trainProgress(train) {
@@ -413,7 +519,7 @@ function trainProgress(train) {
     if (elapsed < dwell) return { from: train.stops[i], to: train.stops[i], ratio: 0, stopIndex: i, dwelling: true, dwellSeconds: dwell, dwellElapsed: elapsed };
     elapsed -= dwell;
     if (i === train.stops.length - 1) return { from: train.stops[i], to: train.stops[i], ratio: 0, stopIndex: i, dwelling: true, dwellSeconds: dwell, dwellElapsed: dwell };
-    const travel = travelSecondsBetween(train.stops[i], train.stops[i + 1]);
+    const travel = travelSecondsForTrain(train, train.stops[i], train.stops[i + 1]);
     if (elapsed < travel) return { from: train.stops[i], to: train.stops[i + 1], ratio: elapsed / travel, stopIndex: i, dwelling: false, dwellSeconds: 0 };
     elapsed -= travel;
   }
@@ -438,8 +544,9 @@ function effectiveLane(train, progress) {
   const minId = ids.length ? Math.min(...ids) : 0;
   const maxId = ids.length ? Math.max(...ids) : 0;
   if (maxId <= 16) return train.direction === "down" ? "miyanoDown" : "miyanoUp";
+  if ((minId === 40 && maxId === 41) || minId >= 40) return train.direction === "down" ? "rapidDownA" : "rapidUpB";
   if (minId >= 38) return train.direction === "down" ? "rapidDownA" : "rapidUpA";
-  if (train.line === "limited" && maxId > 36) {
+  if (train.line === "limited" && minId >= 36) {
     return train.direction === "down" ? "rapidDownA" : "rapidUpA";
   }
   return lane;
@@ -461,10 +568,10 @@ function laneOffset(lane, zoomed) {
     airportDown: 0, airportUp: 0,
   };
   const zoom = {
-    rapidUpA: -460, rapidUpB: -360, rapidDownA: -260, rapidDownB: -160,
-    localUp: -60, localDown: 40,
-    expressUp: 150, expressDown: 250,
-    miyanoUp: -90, miyanoDown: 90,
+    expressUp: -600, expressDown: -480,
+    localUp: -180, localDown: -60,
+    rapidUpB: 60, rapidUpA: 180, rapidDownB: 300, rapidDownA: 420,
+    miyanoUp: -120, miyanoDown: 120,
     airportDown: 0, airportUp: 0,
   };
   return (zoomed ? zoom : overview)[lane] || 0;
@@ -472,6 +579,12 @@ function laneOffset(lane, zoomed) {
 
 function platformFor(train, stationId) {
   const down = train.direction === "down";
+  if (stationId === 42) {
+    if (train.line === "limited") return down ? "9" : "10";
+    if (!down) return "8";
+    if (train.line === "rapid" && !train.terminalLayover) return "2";
+    return "5";
+  }
   if (stationId === 16) {
     if (train.line === "limited") return down ? "9" : "10";
     if (train.line === "local") return down ? "7" : "8";
@@ -525,11 +638,10 @@ function platformPoint(id, train, pointMap, zoomed) {
   if (!platform) return undefined;
   const point = pointMap.get(id);
   const layout = platformBoxLayout(id, point);
-  const number = Number(platform);
-  const index = layout.platforms.indexOf(String(number));
-  if (index < 0) return undefined;
+  const cell = layout.cells.find((item) => item.platform === String(platform));
+  if (!cell) return undefined;
   return {
-    x: layout.left + layout.cellWidth * index + layout.cellWidth / 2,
+    x: layout.left + cell.left + layout.cellWidth / 2,
     y: layout.top + layout.height - 30,
   };
 }
@@ -538,6 +650,10 @@ function shiftIntoInterstationBand(point, progress) {
   if (progress.dwelling || typeof progress.from !== "number" || typeof progress.to !== "number") return point;
   const direction = progress.to > progress.from ? 1 : -1;
   return { x: point.x, y: point.y + direction * 28 };
+}
+
+function movingBandPoint(from, to, ratio) {
+  return makePoint(from, to, 0.22 + ratio * 0.56);
 }
 
 function trainPoint(train, pointMap, zoomed) {
@@ -550,7 +666,7 @@ function trainPoint(train, pointMap, zoomed) {
   if (platform) return { ...platform, progress, lane };
   const from = trainLanePoint(progress.from, lane, train, pointMap, zoomed);
   const to = trainLanePoint(progress.to, lane, train, pointMap, zoomed);
-  const p = makePoint(from, to, progress.ratio);
+  const p = zoomed && !progress.dwelling ? movingBandPoint(from, to, progress.ratio) : makePoint(from, to, progress.ratio);
   const bandPoint = zoomed ? shiftIntoInterstationBand(p, progress) : p;
   return { x: bandPoint.x, y: bandPoint.y, progress, lane };
 }
@@ -594,23 +710,41 @@ function drawOffsetCenterLine(container, pointMap, ids, className, width, dx, ex
 function platformBoxLayout(stationId, point) {
   const platformMap = {
     8: ["1", "2", "3", "4"],
-    16: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-    22: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
-    36: ["1", "2", "3", "4", "5", "6"],
-    38: ["1", "2", "3", "4"],
+    16: ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"],
+    22: ["12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1"],
+    36: ["6", "5", "4", "3", "2", "1"],
+    38: ["4", "3", "2", "1"],
     40: ["1", "2", "3", "4"],
     41: ["1", "2", "3", "4"],
-    42: ["2", "3", "4", "5", "6", "7", "8", "9"],
+    42: ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"],
+  };
+  const centerMap = {
+    8: { 1: -210, 2: -70, 3: 70, 4: 210 },
+    16: { 10: -600, 9: -480, 8: -360, 7: -240, 6: -120, 5: 0, 4: 60, 3: 180, 2: 300, 1: 420 },
+    22: { 12: -660, 11: -540, 10: -420, 9: -300, 8: -180, 7: -60, 6: 60, 5: 180, 4: 300, 3: 420, 2: 540, 1: 660 },
+    36: { 6: -180, 5: -60, 4: 60, 3: 180, 2: 300, 1: 420 },
+    38: { 4: -180, 3: -60, 2: 180, 1: 420 },
+    40: { 1: 60, 2: 180, 3: 300, 4: 420 },
+    41: { 1: 60, 2: 180, 3: 300, 4: 420 },
+    42: { 10: -600, 9: -480, 8: -300, 7: -180, 6: 60, 5: 180, 4: 300, 3: 420, 2: 540, 1: 660 },
   };
   const platforms = platformMap[stationId] || [];
-  const cellWidth = stationId === 22 ? 82 : stationId === 16 ? 86 : 92;
-  const width = Math.max(520, platforms.length * cellWidth);
+  const centers = centerMap[stationId] || {};
+  const cellWidth = 108;
+  const min = Math.min(...platforms.map((platform) => centers[platform] ?? 0));
+  const max = Math.max(...platforms.map((platform) => centers[platform] ?? 0));
+  const width = max - min + cellWidth;
+  const cells = platforms.map((platform) => ({
+    platform,
+    left: (centers[platform] ?? 0) - min,
+  }));
   return {
     platforms,
+    cells,
     cellWidth,
     width,
     height: 96,
-    left: point.x - width / 2,
+    left: point.x + min - cellWidth / 2,
     top: point.y - 48,
   };
 }
@@ -637,21 +771,45 @@ function renderPlatforms(container, pointMap, zoomed) {
   });
 }
 
+function renderPlatformsAligned(container, pointMap, zoomed) {
+  if (!zoomed) return;
+  platformStations.forEach((stationId) => {
+    const point = pointMap.get(stationId);
+    const layout = platformBoxLayout(stationId, point);
+    const box = document.createElement("div");
+    box.className = "platform-box";
+    box.style.left = `${layout.left}px`;
+    box.style.top = `${layout.top}px`;
+    box.style.width = `${layout.width}px`;
+    box.style.height = `${layout.height}px`;
+    box.innerHTML = `
+      <div class="platform-title">${stationById(stationId).name}</div>
+      <div class="platform-groups"><span>特急</span><span>各停</span><span>快速</span></div>
+      <div class="platform-cells">
+        ${layout.cells.map((cell) => `<span style="left:${cell.left}px;width:${layout.cellWidth}px">${cell.platform}番線</span>`).join("")}
+      </div>
+    `;
+    container.appendChild(box);
+  });
+}
+
 function renderOverviewBase() {
   overviewMap.innerHTML = "";
   const rect = overviewMap.getBoundingClientRect();
   const w = rect.width;
-  const h = rect.height;
+  const h = Math.max(rect.height, 2800);
+  overviewMap.style.height = `${h}px`;
   const leftX = Math.max(110, w * 0.28);
   const rightX = Math.min(w - 130, w * 0.72);
-  const topY = 42;
-  const bottomY = h - 58;
+  const topY = 92;
+  const bottomY = h - 110;
   mapPoints = new Map();
 
   stations.forEach((station) => {
-    const t = station.id <= 16 ? (station.id - 1) / 15 : (station.id - 16) / 26;
-    const x = station.id <= 16 ? leftX : rightX;
-    const y = station.id <= 16 ? lerp(topY, bottomY, t) : lerp(bottomY, topY, t);
+    const onLeft = station.id <= 21;
+    const t = onLeft ? (station.id - 1) / 20 : (station.id - 22) / 20;
+    const x = onLeft ? leftX : rightX;
+    const y = onLeft ? lerp(topY, bottomY, t) : lerp(bottomY, topY, t);
     mapPoints.set(station.id, { x, y });
   });
 
@@ -673,7 +831,7 @@ function renderOverviewBase() {
     node.className = `station ${station.major ? "major" : ""}`;
     node.style.left = `${point.x}px`;
     node.style.top = `${point.y}px`;
-    const side = station.id <= 16 ? "right" : "left";
+    const side = station.id <= 21 ? "right" : "left";
     const code = typeof station.id === "number" ? `SM ${pad(station.id)}` : station.code;
     node.innerHTML = `<div class="station-dot"></div><div class="station-label" style="${side}:18px;top:-14px">${station.name}<br><span class="station-code">${code}</span></div>`;
     overviewMap.appendChild(node);
@@ -713,7 +871,7 @@ function renderZoomBase() {
   drawSegment(zoomMap, zoomPoints.get("TA1"), zoomPoints.get("TA2"), "airport", 10, "zoom-line");
   drawSegment(zoomMap, zoomPoints.get("TA2"), zoomPoints.get("TA3"), "airport", 10, "zoom-line");
 
-  renderPlatforms(zoomMap, zoomPoints, true);
+  renderPlatformsAligned(zoomMap, zoomPoints, true);
 
   [...stations, ...branchStations].forEach((station) => {
     const point = zoomPoints.get(station.id);
@@ -769,6 +927,26 @@ function displayDirection(train, progress) {
   return train.direction;
 }
 
+function displayCars(train, progress) {
+  const ids = [progress.from, progress.to].filter((id) => typeof id === "number");
+  const minId = ids.length ? Math.min(...ids) : 99;
+  if (train.cars === 15 && minId <= 8) return "11両";
+  return `${train.cars}両`;
+}
+
+function displayStatus(train, progress) {
+  if (isDepotAfterArrival(train, progress)) return "当駅止まり・回送";
+  return progress.dwelling ? "停車中" : "走行中";
+}
+
+function displayTrain(train, progress) {
+  if (isDepotAfterArrival(train, progress)) return { label: "回送", destination: "当駅止まり", isDepot: true };
+  if (isTerminalDwell(train, progress) && train.terminalLayover) {
+    return { label: train.label, destination: train.nextDestination || stationById(train.start).name };
+  }
+  return { label: train.label, destination: train.destination };
+}
+
 function renderTrains(container, pointMap, zoomed) {
   container.querySelectorAll(".train").forEach((node) => node.remove());
   trains.forEach((train) => {
@@ -781,6 +959,8 @@ function renderTrains(container, pointMap, zoomed) {
     btn.style.left = `${p.x}px`;
     btn.style.top = `${p.y}px`;
     btn.innerHTML = `<div class="head">${display.label}・${display.destination}<br>${currentCars(train, p.progress)}</div><div class="run-state">${statusText(p.progress)}</div><div class="face"></div>`;
+    const cleanDisplay = displayTrain(train, p.progress);
+    btn.innerHTML = `<div class="head">${cleanDisplay.label}・${cleanDisplay.destination}<br>${displayCars(train, p.progress)}</div><div class="run-state">${displayStatus(train, p.progress)}</div><div class="face"></div>`;
     btn.addEventListener("click", () => showTrain(train));
     container.appendChild(btn);
     if (zoomed && train.line === "airport" && p.progress.dwelling && p.progress.from === 22) {
@@ -796,6 +976,19 @@ function renderTrains(container, pointMap, zoomed) {
 
 function arrivalRows(train) {
   const progress = trainProgress(train);
+  if (isTerminalDwell(train, progress) && train.terminalLayover && train.nextStops) {
+    const now = new Date();
+    const rows = [];
+    let elapsedAtArrival = 0;
+    for (let i = 0; i < train.nextStops.length; i += 1) {
+      const station = stationById(train.nextStops[i]);
+      const date = new Date(now.getTime() + elapsedAtArrival * 1000);
+      const nextTrain = { ...train, direction: train.nextDirection || train.direction };
+      rows.push({ id: train.nextStops[i], name: station.name, time: formatTime(date), platform: platformFor(nextTrain, train.nextStops[i]), departed: false });
+      elapsedAtArrival += stopDwell(train, train.nextStops[i], i) + (i < train.nextStops.length - 1 ? travelSecondsForTrain(train, train.nextStops[i], train.nextStops[i + 1]) : 0);
+    }
+    return rows;
+  }
   const now = new Date();
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
@@ -808,7 +1001,7 @@ function arrivalRows(train) {
     const platform = platformFor(train, train.stops[i]);
     const departed = progress.dwelling ? i < passedIndex : i <= passedIndex;
     rows.push({ id: train.stops[i], name: station.name, time: formatTime(date), platform, departed });
-    elapsedAtArrival += stopDwell(train, train.stops[i], i) + (i < train.stops.length - 1 ? travelSecondsBetween(train.stops[i], train.stops[i + 1]) : 0);
+    elapsedAtArrival += stopDwell(train, train.stops[i], i) + (i < train.stops.length - 1 ? travelSecondsForTrain(train, train.stops[i], train.stops[i + 1]) : 0);
   }
   return rows;
 }
@@ -842,6 +1035,16 @@ function showTrain(train) {
   dialogBody.innerHTML = `
     <h2 class="dialog-title">${display.label} ${display.destination}行</h2>
     <div class="dialog-meta">${currentCars(train, progress)}・${stationById(train.start).name}発・${statusText(progress)}${currentPlatform ? `・${currentPlatform}番線` : ""}</div>
+    ${note ? `<p class="dialog-note">${note}</p>` : ""}
+    <div class="stop-list">
+      ${rows.map((row) => `<div class="stop-row ${row.departed ? "departed" : ""}"><strong>${row.name}${row.platform ? ` ${row.platform}番線` : ""}</strong><span>${row.departed ? "発車済み" : `${row.time} 着`}</span>${meetInfo(train, row.id) ? `<em>${meetInfo(train, row.id)}</em>` : ""}</div>`).join("")}
+    </div>
+  `;
+  const cleanDisplay = displayTrain(train, progress);
+  const cleanTitle = cleanDisplay.isDepot ? `${cleanDisplay.label} ${cleanDisplay.destination}` : `${cleanDisplay.label} ${cleanDisplay.destination}行`;
+  dialogBody.innerHTML = `
+    <h2 class="dialog-title">${cleanTitle}</h2>
+    <div class="dialog-meta">${displayCars(train, progress)}・${stationById(train.start).name}発・${displayStatus(train, progress)}${currentPlatform ? `・${currentPlatform}番線` : ""}</div>
     ${note ? `<p class="dialog-note">${note}</p>` : ""}
     <div class="stop-list">
       ${rows.map((row) => `<div class="stop-row ${row.departed ? "departed" : ""}"><strong>${row.name}${row.platform ? ` ${row.platform}番線` : ""}</strong><span>${row.departed ? "発車済み" : `${row.time} 着`}</span>${meetInfo(train, row.id) ? `<em>${meetInfo(train, row.id)}</em>` : ""}</div>`).join("")}
