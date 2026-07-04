@@ -346,7 +346,7 @@ function makeLimitedTrain(entry, index) {
   return train;
 }
 
-function makePatternTrain({ key, label, kind, direction, stops, interval, offset, destination, cars, laneDown, laneUp, terminalLayover }) {
+function makePatternTrain({ key, label, kind, direction, stops, interval, offset, destination, cars, laneDown, laneUp, terminalLayover, throughOrigin }) {
   return {
     key,
     label,
@@ -361,6 +361,7 @@ function makePatternTrain({ key, label, kind, direction, stops, interval, offset
     laneDown,
     laneUp,
     terminalLayover,
+    throughOrigin,
   };
 }
 
@@ -379,10 +380,13 @@ serviceTemplates.push(
   makePatternTrain({ key: "miyano-local-up", label: "普通", kind: "miyano", direction: "up", stops: mainIds(16, 1), interval: 15 * 60, offset: 11 * 60, destination: "赤島原", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds }),
   makePatternTrain({ key: "miyano-itanuma-down", label: "普通", kind: "miyano", direction: "down", stops: mainIds(16, 8), interval: 30 * 60, offset: 25 * 60, destination: "板沼", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds }),
   makePatternTrain({ key: "miyano-itanuma-up", label: "普通", kind: "miyano", direction: "up", stops: mainIds(8, 16), interval: 30 * 60, offset: 39 * 60, destination: "江川", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-down", label: "各停", kind: "local", direction: "down", stops: localStops(16, 38), interval: 10 * 60, offset: 1 * 60, destination: "武蔵多摩浜", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-up", label: "各停", kind: "local", direction: "up", stops: localStops(38, 16), interval: 10 * 60, offset: 6 * 60, destination: "江川", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-obuki-down", label: "各停", kind: "local", direction: "down", stops: localStops(16, 29), interval: 20 * 60, offset: 11 * 60, destination: "大吹", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-obuki-up", label: "各停", kind: "local", direction: "up", stops: localStops(29, 16), interval: 20 * 60, offset: 16 * 60, destination: "江川", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
+  makePatternTrain({ key: "local-down-motoyama", label: "各停", kind: "local", direction: "down", stops: localStops(16, 38), interval: 40 * 60, offset: 1 * 60, destination: "武蔵多摩浜", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, throughOrigin: "元山線から直通" }),
+  makePatternTrain({ key: "local-down-egawa", label: "各停", kind: "local", direction: "down", stops: localStops(16, 38), interval: 40 * 60, offset: 21 * 60, destination: "武蔵多摩浜", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
+  makePatternTrain({ key: "local-up-egawa", label: "各停", kind: "local", direction: "up", stops: localStops(38, 16), interval: 20 * 60, offset: 6 * 60, destination: "江川", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
+  makePatternTrain({ key: "local-obuki-down-honmachi", label: "各停", kind: "local", direction: "down", stops: localStops(16, 29), interval: 40 * 60, offset: 11 * 60, destination: "大吹", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, throughOrigin: "本町から直通" }),
+  makePatternTrain({ key: "local-obuki-down-egawa", label: "各停", kind: "local", direction: "down", stops: localStops(16, 29), interval: 40 * 60, offset: 31 * 60, destination: "大吹", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
+  makePatternTrain({ key: "local-obuki-up-honmachi", label: "各停", kind: "local", direction: "up", stops: localStops(29, 16), interval: 40 * 60, offset: 16 * 60, destination: "本町", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
+  makePatternTrain({ key: "local-obuki-up-motoyama", label: "各停", kind: "local", direction: "up", stops: localStops(29, 16), interval: 40 * 60, offset: 36 * 60, destination: "元山", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
 );
 
 function generateTrains(now) {
@@ -398,7 +402,7 @@ function generateTrains(now) {
       const departure = first + n * interval;
       const elapsed = seconds - departure;
       if (elapsed >= 0 && elapsed <= duration) {
-        list.push({ ...template, id: `${template.key}-${departure}`, departure, elapsed });
+        list.push({ ...template, id: `${template.key}-${departure}`, departure, platformSeed: departure, elapsed });
       }
     }
   });
@@ -518,7 +522,7 @@ function stableTrainHash(train) {
 }
 
 function alternatePlatform(train, a, b, minutes = 10) {
-  const base = Number.isFinite(train.departure) ? train.departure : train.offset || 0;
+  const base = Number.isFinite(train.platformSeed) ? train.platformSeed : Number.isFinite(train.departure) ? train.departure : train.offset || 0;
   return (Math.floor(Math.abs(base) / (minutes * 60)) + stableTrainHash(train)) % 2 === 0 ? a : b;
 }
 
@@ -527,6 +531,7 @@ function terminalOrOrigin(train, stationId) {
 }
 
 function platformFor(train, stationId) {
+  if (train.turnbackPlatformStation === stationId && train.turnbackPlatform) return train.turnbackPlatform;
   const down = train.direction === "down";
   if (stationId === 16 && train.platformAtEgawa) return train.platformAtEgawa;
   if (stationId === 1) return down ? "1" : "2";
@@ -599,6 +604,8 @@ function trainForPassengerDisplay(train, progress) {
   const firstStop = progress.from;
   return {
     ...train,
+    turnbackPlatformStation: firstStop,
+    turnbackPlatform: platformFor(train, firstStop),
     direction: train.direction === "down" ? "up" : "down",
     destination: terminalTurnbackDestination(train),
     stops: terminalTurnbackStops(train),
@@ -800,7 +807,7 @@ function platformBoxLayout(stationId, point) {
     1: { 2: -120, 1: 120 },
     8: { 1: -120, 2: 0, 3: 120, 4: 240 },
     15: { 1: -240, 2: 120, 3: -120, 4: 240 },
-    16: { 10: -540, 9: -420, 8: -300, 7: -180, 6: -60, 5: 60, 4: 180, 3: 300, 2: 420, 1: 540 },
+    16: { 10: -540, 9: -420, 8: -300, 7: -180, 5: -60, 6: 60, 4: 180, 3: 300, 2: 420, 1: 540 },
     22: { 12: 180, 11: 60, 10: 300, 9: 420, 8: -180, 7: -180, 6: -60, 5: -60, 4: 60, 3: 180, 2: 300, 1: 420 },
     29: { 7: -240, 6: -180, 5: -60, 4: 60, 3: 180, 2: 300, 1: 420 },
     36: { 6: -180, 5: -60, 4: 60, 3: 180, 2: 300, 1: 420 },
@@ -1047,7 +1054,7 @@ function setMode(zoomed) {
 
 function applyZoomScale() {
   const mobileZoom = window.matchMedia("(max-width: 720px)").matches && railPanel.classList.contains("zoomed");
-  const scale = mobileZoom ? Math.min(0.46, Math.max(0.36, (railPanel.clientWidth - 20) / 1700)) : 1;
+  const scale = mobileZoom ? Math.min(0.46, Math.max(0.2, (railPanel.clientWidth - 18) / 1700)) : 1;
   zoomMap.style.transform = scale === 1 ? "" : `scale(${scale})`;
   zoomMap.style.transformOrigin = "top left";
 }
