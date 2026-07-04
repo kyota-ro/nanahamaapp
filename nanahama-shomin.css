@@ -188,6 +188,20 @@ main {
   font-size: 24px;
 }
 
+.last-refresh {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 8px;
+  color: #d9e4ea;
+  background: rgba(255,255,255,.06);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .rail-panel {
   position: relative;
   flex: 1 1 0;
@@ -406,15 +420,28 @@ main {
   position: absolute;
   left: 0;
   width: 100%;
-  height: 176px;
-  border-top: 1px solid #303238;
-  background:
-    linear-gradient(to bottom, #26282e 0 38%, #1d1f23 38% 100%);
+  border-top: 1px solid rgba(255,255,255,.08);
+  border-bottom: 1px solid rgba(0,0,0,.34);
+  background: #2a2c32;
+  z-index: 0;
 }
 
-.zoom-row:nth-child(odd) {
-  background:
-    linear-gradient(to bottom, #303238 0 38%, #23252a 38% 100%);
+.zoom-row.alt {
+  background: #303238;
+}
+
+.zoom-between-band {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  border-top: 1px solid rgba(255,255,255,.035);
+  border-bottom: 1px solid rgba(0,0,0,.24);
+  background: #1c1e23;
+  z-index: 0;
+}
+
+.zoom-between-band.alt {
+  background: #22252a;
 }
 
 .zoom-station-name {
@@ -496,11 +523,11 @@ main {
 }
 
 .overview-map .train {
-  width: 22px;
-  min-height: 26px;
+  width: 54px;
+  min-height: 50px;
   border-radius: 5px;
   clip-path: polygon(16% 0, 84% 0, 100% 22%, 100% 78%, 50% 100%, 0 78%, 0 22%);
-  padding: 0;
+  padding: 0 0 4px;
   border: 2px solid #fff;
   overflow: hidden;
 }
@@ -518,15 +545,23 @@ main {
 }
 
 .overview-map .train .head {
-  min-height: 14px;
-  padding: 0;
-  font-size: 0;
+  min-height: 20px;
+  padding: 2px 2px 1px;
+  font-size: 7px;
+  line-height: 1.1;
 }
 
 .overview-map .train .cars,
-.overview-map .train .face,
 .overview-map .train .run-state {
   display: none;
+}
+
+.overview-map .train .face {
+  display: block;
+  width: 19px;
+  height: 14px;
+  border-width: 2px;
+  margin-top: 3px;
 }
 
 .zoom-map .train {
@@ -906,5 +941,11 @@ main {
   .station-label {
     min-width: 94px;
     font-size: 12px;
+  }
+
+  .rail-panel.zoomed .zoom-map {
+    transform: scale(.42);
+    transform-origin: top left;
+    margin-left: 0;
   }
 }
