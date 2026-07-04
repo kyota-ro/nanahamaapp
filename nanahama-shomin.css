@@ -944,7 +944,7 @@ main {
   }
 
   .rail-panel.zoomed .zoom-map {
-    transform: scale(.42);
+    transform: scale(.22);
     transform-origin: top left;
     margin-left: 0;
   }
