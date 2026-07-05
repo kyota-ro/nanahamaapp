@@ -69,13 +69,15 @@ const lineColors = {
 const dwellSeconds = 45;
 const turnbackSeconds = 7 * 60;
 const airportLayoverSeconds = 15 * 60;
-const miyanoOvertakeStations = new Set([5, 8, 10, 12, 15]);
+const miyanoOvertakeStations = new Set([8, 10, 13, 15]);
 let mapPoints = new Map();
 let zoomPoints = new Map();
 let trains = [];
 let userZoomScale = 1;
+let activeZoomScale = 1;
 let pinchStartDistance = 0;
 let pinchStartScale = 1;
+let pinchStartCenter = { x: 0, y: 0 };
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -122,11 +124,12 @@ function travelSecondsBetween(from, to, train) {
   const step = from < to ? 1 : -1;
   let total = 0;
   for (let id = from; id !== to; id += step) total += adjacentTravelSeconds(id, id + step);
+  const rawTotal = total;
   const skipped = Math.max(0, Math.abs(to - from) - 1);
   const passingReduction = train?.kind === "local" || train?.kind === "miyano" ? 0 : skipped * 2 * 60;
   let result = Math.max(90, total - passingReduction);
-  if (train?.kind === "limited" && Math.min(from, to) >= 36) result = Math.ceil(result * 1.35);
-  if (train?.label === "快速急行" && Math.min(from, to) >= 36) result = Math.ceil(result * 1.25);
+  if (train?.kind === "limited" && Math.min(from, to) >= 36) result = Math.max(result, rawTotal + skipped * 90);
+  if (train?.label === "快速急行" && Math.min(from, to) >= 36) result = Math.max(result, rawTotal + skipped * 60);
   return result;
 }
 
@@ -140,9 +143,6 @@ function branchTravelSeconds(from, to) {
 function stopDwell(train, stop, index) {
   if (train.passThrough?.includes(stop)) return 0;
   if (train.fixedDwell?.[stop] != null) return train.fixedDwell[stop];
-  if (train.kind === "miyano" && stop === 8 && index > 0 && index < train.stops.length - 1) return 5 * 60;
-  if (train.kind === "miyano" && stop === 5 && index > 0 && index < train.stops.length - 1) return 4 * 60;
-  if (train.kind === "miyano" && miyanoOvertakeStations.has(stop) && index > 0 && index < train.stops.length - 1) return 3 * 60;
   if (index === train.stops.length - 1) return train.terminalLayover || dwellSeconds;
   return dwellSeconds;
 }
@@ -231,20 +231,37 @@ function localStops(origin, terminal) {
 
 function returnPlanForRapid(entry, index) {
   if (entry.express) return { dest: "赤島原", terminal: 1, layover: 2 * 60, nextDest: "東ノ宮" };
+  if (entry.dest === "戸羽空港") return { dest: "江川", terminal: 16, layover: 45 };
   if (index === 0 || index === 15) return { dest: "板沼", terminal: 8, layover: 8 * 60 };
-  if (index % 3 === 1) return { dest: "大橋", terminal: 15, layover: 7 * 60, nextDest: "江川", platform: "2" };
+  if (index % 3 === 1) return { dest: "大橋", terminal: 15, layover: 7 * 60, nextDest: "江川", platform: Math.floor(index / 3) % 2 === 0 ? "2" : "3" };
   return { dest: "江川", terminal: 16, layover: 45 };
 }
 
 function throughOriginForDestination(destination) {
+  if (destination === "戸羽空港") return "戸羽空港線から直通";
   if (isMiraijimaDestination(destination)) return "みらいじま線から直通";
   if (isSanbuDestination(destination)) return "山武線から直通";
   return "";
 }
 
+function vehicleNumber(prefix, index) {
+  return `${prefix}${pad((index % 30) + 1)}`;
+}
+
+function vehicleInfoFor(kind, label, cars, index) {
+  if (kind === "rapid" || kind === "airport") return { vehicleId: vehicleNumber("V", index), greenCars: "4・5号車" };
+  if (kind === "local") return { vehicleId: vehicleNumber("Z", index), greenCars: "" };
+  if (kind === "miyano") return { vehicleId: vehicleNumber("S", index), greenCars: "" };
+  if (kind === "limited") return cars === 12
+    ? { vehicleId: vehicleNumber("Xα", index), greenCars: "1・7号車" }
+    : { vehicleId: vehicleNumber("Xβ", index), greenCars: "1号車" };
+  return { vehicleId: "", greenCars: "" };
+}
+
 function makeRapidTrain(entry, index, direction) {
   const express = !!entry.express;
   const line = entry.dest === "戸羽空港" ? "airport" : "rapid";
+  const vehicle = vehicleInfoFor(line, entry.label, 15, index);
   if (direction === "down") {
     const origin = entry.depot ? 16 : 1;
     const stops = rapidStops(origin, entry.dest, express);
@@ -262,6 +279,8 @@ function makeRapidTrain(entry, index, direction) {
       fixedDwell: { 16: Math.max(45, (entry.dep - entry.arr) * 60) },
       destination: entry.dest,
       cars: 15,
+      vehicleId: vehicle.vehicleId,
+      greenCars: vehicle.greenCars,
       laneDown: entry.platform === "1" ? "rapidDownA" : "rapidDownB",
       laneUp: "rapidUpA",
       terminalLayover: entry.dest === "戸羽空港" ? airportLayoverSeconds : turnbackSeconds,
@@ -294,6 +313,8 @@ function makeRapidTrain(entry, index, direction) {
     throughOrigin: throughOriginForDestination(entry.dest),
     destination: plan.dest,
     cars: 15,
+    vehicleId: vehicle.vehicleId,
+    greenCars: vehicle.greenCars,
     laneDown: "rapidDownA",
     laneUp: platform === "3" ? "rapidUpA" : "rapidUpB",
     terminalLayover: plan.layover,
@@ -317,6 +338,8 @@ function makeOhashiToEgawaTrain(upTrain, index) {
     stops: [15, 16],
     destination: "江川",
     cars: 15,
+    vehicleId: upTrain.vehicleId,
+    greenCars: upTrain.greenCars,
     laneDown: "miyanoDown",
     laneUp: "miyanoUp",
     platformAtOhashi: upTrain.platformAtOhashi || "2",
@@ -330,6 +353,7 @@ function makeOhashiToEgawaTrain(upTrain, index) {
 function makeLimitedTrain(entry, index) {
   const down = entry.direction === "down";
   const destAirport = String(entry.dest).includes("戸羽空港") || String(entry.label).includes("空港");
+  const vehicle = vehicleInfoFor("limited", entry.label, entry.cars, index);
   const stops = down
     ? destAirport ? [16, 22, "TA1", "TA2", "TA3"] : [16, 38, 42]
     : [16, 8, 1];
@@ -345,6 +369,8 @@ function makeLimitedTrain(entry, index) {
     fixedDwell: { 16: Math.max(45, (entry.dep - entry.arr) * 60) },
     destination: entry.dest,
     cars: entry.cars,
+    vehicleId: vehicle.vehicleId,
+    greenCars: vehicle.greenCars,
     laneDown: "expressDown",
     laneUp: "expressUp",
     terminalLayover: destAirport ? airportLayoverSeconds : turnbackSeconds,
@@ -355,7 +381,8 @@ function makeLimitedTrain(entry, index) {
   return train;
 }
 
-function makePatternTrain({ key, label, kind, direction, stops, interval, offset, destination, cars, laneDown, laneUp, terminalLayover, throughOrigin }) {
+function makePatternTrain({ key, label, kind, direction, stops, interval, offset, destination, cars, laneDown, laneUp, terminalLayover, throughOrigin, fixedDwell, platformAtEgawa, platformAtOhashi, vehicleIndex = 0 }) {
+  const vehicle = vehicleInfoFor(kind, label, cars, vehicleIndex);
   return {
     key,
     label,
@@ -367,11 +394,22 @@ function makePatternTrain({ key, label, kind, direction, stops, interval, offset
     offset,
     destination,
     cars,
+    vehicleId: vehicle.vehicleId,
+    greenCars: vehicle.greenCars,
     laneDown,
     laneUp,
     terminalLayover,
     throughOrigin,
+    fixedDwell,
+    platformAtEgawa,
+    platformAtOhashi,
   };
+}
+
+function makeAnchoredPatternTrain(config, anchorStation, anchorMinute, depart = false) {
+  const train = makePatternTrain({ ...config, offset: 0 });
+  train.offset = anchorMinute * 60 - runtimeAtStop(train, anchorStation, depart);
+  return train;
 }
 
 const serviceTemplates = [];
@@ -385,17 +423,17 @@ egawaRapidEastTimetable.forEach((entry, index) => {
 limitedTimetable.forEach((entry, index) => serviceTemplates.push(makeLimitedTrain(entry, index)));
 
 serviceTemplates.push(
-  makePatternTrain({ key: "miyano-local-down", label: "普通", kind: "miyano", direction: "down", stops: mainIds(1, 16), interval: 30 * 60, offset: 4 * 60, destination: "江川", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "miyano-local-up", label: "普通", kind: "miyano", direction: "up", stops: mainIds(16, 1), interval: 30 * 60, offset: 11 * 60, destination: "赤島原", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "miyano-itanuma-up", label: "普通", kind: "miyano", direction: "up", stops: mainIds(16, 8), interval: 30 * 60, offset: 26 * 60, destination: "板沼", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: 9 * 60 }),
-  makePatternTrain({ key: "miyano-itanuma-down", label: "普通", kind: "miyano", direction: "down", stops: mainIds(8, 16), interval: 30 * 60, offset: 7 * 60, destination: "江川", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-down-motoyama", label: "各停", kind: "local", direction: "down", stops: localStops(16, 38), interval: 40 * 60, offset: 1 * 60, destination: "武蔵多摩浜", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, throughOrigin: "元山線から直通" }),
-  makePatternTrain({ key: "local-down-egawa", label: "各停", kind: "local", direction: "down", stops: localStops(16, 38), interval: 40 * 60, offset: 21 * 60, destination: "武蔵多摩浜", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-up-egawa", label: "各停", kind: "local", direction: "up", stops: localStops(38, 16), interval: 20 * 60, offset: 6 * 60, destination: "江川", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-obuki-down-honmachi", label: "各停", kind: "local", direction: "down", stops: localStops(16, 29), interval: 40 * 60, offset: 11 * 60, destination: "大吹", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, throughOrigin: "本町から直通" }),
-  makePatternTrain({ key: "local-obuki-down-egawa", label: "各停", kind: "local", direction: "down", stops: localStops(16, 29), interval: 40 * 60, offset: 31 * 60, destination: "大吹", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-obuki-up-honmachi", label: "各停", kind: "local", direction: "up", stops: localStops(29, 16), interval: 40 * 60, offset: 16 * 60, destination: "本町", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
-  makePatternTrain({ key: "local-obuki-up-motoyama", label: "各停", kind: "local", direction: "up", stops: localStops(29, 16), interval: 40 * 60, offset: 36 * 60, destination: "元山", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds }),
+  makeAnchoredPatternTrain({ key: "miyano-akashima-down", label: "普通", kind: "miyano", direction: "down", stops: mainIds(1, 16), interval: 30 * 60, destination: "江川", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds, fixedDwell: { 10: 3 * 60, 13: 3 * 60 }, vehicleIndex: 0 }, 16, 3, false),
+  makeAnchoredPatternTrain({ key: "miyano-akashima-up", label: "普通", kind: "miyano", direction: "up", stops: mainIds(16, 1), interval: 30 * 60, destination: "赤島原", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds, fixedDwell: { 10: 3 * 60, 13: 3 * 60 }, vehicleIndex: 1 }, 16, 12, true),
+  makeAnchoredPatternTrain({ key: "miyano-itanuma-up", label: "普通", kind: "miyano", direction: "up", stops: mainIds(16, 8), interval: 30 * 60, destination: "板沼", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: 9 * 60, fixedDwell: { 10: 3 * 60, 13: 3 * 60 }, vehicleIndex: 2 }, 16, 27, true),
+  makeAnchoredPatternTrain({ key: "miyano-itanuma-down", label: "普通", kind: "miyano", direction: "down", stops: mainIds(8, 16), interval: 30 * 60, destination: "江川", cars: 8, laneDown: "miyanoDown", laneUp: "miyanoUp", terminalLayover: turnbackSeconds, fixedDwell: { 10: 3 * 60, 13: 3 * 60 }, vehicleIndex: 3 }, 16, 18, false),
+  makeAnchoredPatternTrain({ key: "local-down-obuki-a", label: "各停", kind: "local", direction: "down", stops: localStops(16, 29), interval: 30 * 60, destination: "大吹", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, throughOrigin: "元山線から直通", vehicleIndex: 0 }, 16, 1, true),
+  makeAnchoredPatternTrain({ key: "local-down-musashi", label: "各停", kind: "local", direction: "down", stops: localStops(16, 38), interval: 30 * 60, destination: "武蔵多摩浜", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, vehicleIndex: 1 }, 16, 11, true),
+  makeAnchoredPatternTrain({ key: "local-down-obuki-b", label: "各停", kind: "local", direction: "down", stops: localStops(16, 29), interval: 30 * 60, destination: "大吹", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, throughOrigin: "本町から直通", vehicleIndex: 2 }, 16, 21, true),
+  makeAnchoredPatternTrain({ key: "local-up-motoyama", label: "各停", kind: "local", direction: "up", stops: localStops(29, 16), interval: 40 * 60, destination: "元山", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, vehicleIndex: 3 }, 16, 6, false),
+  makeAnchoredPatternTrain({ key: "local-up-egawa-a", label: "各停", kind: "local", direction: "up", stops: localStops(38, 16), interval: 40 * 60, destination: "江川", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, vehicleIndex: 4 }, 16, 16, false),
+  makeAnchoredPatternTrain({ key: "local-up-honmachi", label: "各停", kind: "local", direction: "up", stops: localStops(29, 16), interval: 40 * 60, destination: "本町", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, vehicleIndex: 5 }, 16, 26, false),
+  makeAnchoredPatternTrain({ key: "local-up-egawa-b", label: "各停", kind: "local", direction: "up", stops: localStops(38, 16), interval: 40 * 60, destination: "江川", cars: 11, laneDown: "localDown", laneUp: "localUp", terminalLayover: turnbackSeconds, vehicleIndex: 6 }, 16, 36, false),
 );
 
 function generateTrains(now) {
@@ -560,12 +598,12 @@ function platformFor(train, stationId) {
   if (stationId === 8) {
     if (terminalOrOrigin(train, 8)) return alternatePlatform(train, "2", "3", 15);
     if (train.kind === "miyano") return down ? "4" : "1";
-    return down ? "3" : "4";
+    return down ? "4" : "1";
   }
   if (stationId === 15) {
     if (train.platformAtOhashi) return train.platformAtOhashi;
     if (train.kind !== "miyano") return down ? "4" : "1";
-    return terminalOrOrigin(train, 15) ? "2" : down ? "3" : "1";
+    return terminalOrOrigin(train, 15) ? alternatePlatform(train, "2", "3", 10) : down ? "4" : "1";
   }
   if (stationId === 16 && train.kind === "local") return terminalOrOrigin(train, 16) ? alternatePlatform(train, "7", "8", 10) : down ? "7" : "8";
   if (stationId === 16 && train.kind === "miyano") return down ? "5" : "6";
@@ -574,10 +612,10 @@ function platformFor(train, stationId) {
   }
   if (stationId === 22) {
     if (train.kind === "airport") return down ? "9" : "12";
-    if (train.kind === "local") return down ? "5" : "7";
+    if (train.kind === "local") return down ? "5" : "6";
     return down ? "1" : "3";
   }
-  if (stationId === 29) return train.kind === "local" ? (terminalOrOrigin(train, 29) ? alternatePlatform(train, "6", "7", 10) : down ? "5" : "6") : down ? "1" : "3";
+  if (stationId === 29) return train.kind === "local" ? (terminalOrOrigin(train, 29) ? alternatePlatform(train, "6", "7", 10) : down ? "5" : "8") : down ? "1" : "3";
   if (stationId === 36) {
     if (train.kind === "local") return down ? "5" : "6";
     if (terminalOrOrigin(train, 36)) return alternatePlatform(train, "2", "3", 10);
@@ -585,7 +623,7 @@ function platformFor(train, stationId) {
     return down ? "1" : "4";
   }
   if (stationId === 38) return train.kind === "local" ? alternatePlatform(train, "3", "4") : down ? "1" : "2";
-  if (stationId === 40 || stationId === 41) return down ? "4" : "1";
+  if (stationId === 40 || stationId === 41) return down ? "1" : "4";
   if (stationId === 42) {
     if (train.kind === "limited") return down ? (train.platformAtEgawa === "10" ? "10" : "9") : "10";
     if (down && isMiraijimaDestination(train.destination)) return "2";
@@ -678,6 +716,60 @@ function visibleStops(train) {
 function serviceTime(seconds) {
   const minutes = ((Math.floor(seconds / 60) % (24 * 60)) + (24 * 60)) % (24 * 60);
   return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+}
+
+function stopName(id) {
+  return stationById(id)?.name || String(id);
+}
+
+function operationOrigin(template) {
+  return template.throughOrigin || `${stopName(template.stops[0])}発`;
+}
+
+function operationDestination(template) {
+  return `${template.destination}行`;
+}
+
+function vehicleHistoryRows(train) {
+  if (!train.vehicleId) return [];
+  const nowSeconds = currentDaySeconds();
+  const from = nowSeconds - 6 * 3600;
+  const to = nowSeconds + 6 * 3600;
+  const rows = [];
+  serviceTemplates
+    .filter((template) => template.vehicleId === train.vehicleId)
+    .forEach((template) => {
+      const interval = template.interval || 3600;
+      const duration = journeySeconds(template);
+      const base = template.offset || 0;
+      const first = Math.floor((from - base) / interval) * interval + base;
+      for (let departure = first; departure <= to; departure += interval) {
+        const arrival = departure + duration;
+        if (arrival < from || departure > to) continue;
+        rows.push({
+          departure,
+          arrival,
+          template,
+          status: nowSeconds >= departure && nowSeconds <= arrival ? "運行中" : arrival < nowSeconds ? "終了" : "予定",
+        });
+      }
+    });
+  return rows.sort((a, b) => a.departure - b.departure);
+}
+
+function showVehicleHistory(train) {
+  const old = dialogBody.querySelector(".vehicle-history");
+  if (old) {
+    old.remove();
+    return;
+  }
+  const rows = vehicleHistoryRows(train);
+  const section = document.createElement("section");
+  section.className = "vehicle-history";
+  section.innerHTML = `<h3>${train.vehicleId}の運用</h3>${rows.length ? rows.map((row) => `<div class="vehicle-history-row ${row.status === "運行中" ? "active" : ""}"><strong>${serviceTime(row.departure)} - ${serviceTime(row.arrival)}</strong><span>${row.template.label} ${operationOrigin(row.template)} → ${operationDestination(row.template)}</span><em>${row.status}</em></div>`).join("") : "<p>この時間帯の運用データはありません。</p>"}`;
+  const stopList = dialogBody.querySelector(".stop-list");
+  if (stopList) stopList.before(section);
+  else dialogBody.appendChild(section);
 }
 
 function numericStationBetween(from, to, stationId) {
@@ -845,7 +937,8 @@ function renderZoomBase() {
     dot.className = `station ${station.major ? "major" : ""}`;
     dot.style.left = `${point.x}px`;
     dot.style.top = `${point.y}px`;
-    dot.innerHTML = "<div class=\"station-dot\"></div>";
+    const isAirport = typeof station.id === "string";
+    dot.innerHTML = `<div class="station-dot"></div>${isAirport ? `<div class="airport-station-label">${station.name}<br><span>${station.code}</span></div>` : ""}`;
     zoomMap.appendChild(dot);
   });
   const airportBox = document.createElement("div");
@@ -853,6 +946,7 @@ function renderZoomBase() {
   airportBox.style.top = `${airportTop}px`;
   airportBox.innerHTML = "<strong>戸羽空港線</strong><span>船戸から分岐する直通列車を別枠で表示</span>";
   zoomMap.appendChild(airportBox);
+  renderAirportPlatforms(zoomMap, zoomPoints);
 }
 
 function drawSegment(container, a, b, className, width, extraClass = "segment") {
@@ -917,6 +1011,38 @@ function platformBoxLayout(stationId, point) {
   return { platforms, cells, cellWidth, width: max - min + cellWidth, height: 96, left: point.x + min - cellWidth / 2, top: point.y - 48 };
 }
 
+function airportPlatformLayout(stationId, point) {
+  const title = stationId === "TA0" ? "船戸" : "戸羽空港";
+  const platforms = stationId === "TA0" ? ["9", "10", "11", "12"] : ["1", "2"];
+  const cellWidth = stationId === "TA0" ? 118 : 150;
+  const width = platforms.length * cellWidth;
+  return {
+    stationId,
+    title,
+    platforms,
+    cells: platforms.map((platform, index) => ({ platform, left: index * cellWidth })),
+    cellWidth,
+    width,
+    height: 90,
+    left: point.x - width / 2,
+    top: point.y - 46,
+  };
+}
+
+function renderAirportPlatforms(container, pointMap) {
+  ["TA0", "TA3"].forEach((stationId) => {
+    const layout = airportPlatformLayout(stationId, pointMap.get(stationId));
+    const box = document.createElement("div");
+    box.className = "platform-box airport-platform-box";
+    box.style.left = `${layout.left}px`;
+    box.style.top = `${layout.top}px`;
+    box.style.width = `${layout.width}px`;
+    box.style.height = `${layout.height}px`;
+    box.innerHTML = `<div class="platform-title">${layout.title}</div><div class="platform-groups"><span>戸羽空港線</span></div><div class="platform-cells">${layout.cells.map((cell) => `<span style="left:${cell.left}px;width:${layout.cellWidth}px">${cell.platform}番線</span>`).join("")}</div>`;
+    container.appendChild(box);
+  });
+}
+
 function renderPlatformsAligned(container, pointMap) {
   platformStations.forEach((stationId) => {
     const point = pointMap.get(stationId);
@@ -946,6 +1072,12 @@ function trainLanePoint(id, lane, train, pointMap, zoomed) {
 }
 
 function platformPoint(id, train, pointMap, zoomed) {
+  if (zoomed && typeof id === "string" && (id === "TA0" || id === "TA3")) {
+    const layout = airportPlatformLayout(id, pointMap.get(id));
+    const platform = id === "TA0" ? (routeDirection(train) === "down" ? "9" : "12") : "1";
+    const cell = layout.cells.find((item) => item.platform === platform);
+    return { x: layout.left + cell.left + layout.cellWidth / 2, y: layout.top + layout.height - 28 };
+  }
   if (!zoomed || typeof id !== "number" || !platformStations.has(id)) return undefined;
   const platform = platformFor(train, id);
   if (!platform) return undefined;
@@ -1009,6 +1141,11 @@ function trainPoint(train, pointMap, zoomed) {
   if (train.kind === "limited" && train.destination === "戸羽空港") {
     return limitedAirportPoint(train, progress, pointMap, zoomed);
   }
+  if (train.kind === "airport" && progress.dwelling && progress.from === 22 && zoomed) {
+    const branchProgress = { ...progress, from: "TA0", to: "TA0" };
+    const stopped = dwellingPoint("TA0", "airportDown", train, pointMap, zoomed);
+    return { ...stopped, progress: branchProgress, lane: "airportDown" };
+  }
   if (train.kind === "airport" && progress.from === 22 && progress.to === "TA1" && progress.ratio > 0) progress.from = "TA0";
   if (train.kind === "airport" && progress.from === "TA1" && progress.to === 22 && progress.ratio > 0) progress.to = "TA0";
   const positionTrain = isTerminalTurnback(train, progress) ? trainForPassengerDisplay(train, progress) : train;
@@ -1059,6 +1196,10 @@ function limitedAirportPoint(train, progress, pointMap, zoomed) {
     elapsed -= travel;
   }
   const lane = from === 16 || to === 22 ? "expressDown" : "airportDown";
+  if (zoomed && dwelling && from === 22) {
+    const stopped = dwellingPoint("TA0", "airportDown", train, pointMap, zoomed);
+    return { x: stopped.x, y: stopped.y, progress: { ...progress, from: "TA0", to: "TA0", dwelling: true }, lane: "airportDown" };
+  }
   const mappedFrom = from === 22 && to === "TA1" ? "TA0" : from;
   const mappedTo = to === 22 && from === "TA1" ? "TA0" : to;
   const fromPoint = trainLanePoint(mappedFrom, lane, train, pointMap, zoomed);
@@ -1115,6 +1256,10 @@ function nextOperationNotice(train, progress) {
   return `終点到着後：${train.label} ${terminalTurnbackDestination(train)}行 ${train.cars}両`;
 }
 
+function greenCarBadge(train) {
+  return train.greenCars ? `<span class="green-car-badge">グリーン車 ${train.greenCars}</span>` : "";
+}
+
 function showTrain(train) {
   const progress = trainProgress(train);
   const passengerTrain = trainForPassengerDisplay(train, progress);
@@ -1123,7 +1268,8 @@ function showTrain(train) {
   const display = displayTrain(train, progress);
   const title = display.isDepot ? `${display.label} ${display.destination}` : `${display.label} ${display.destination}行`;
   const originText = passengerTrain.throughOrigin || `${stationById(passengerTrain.stops[0]).name}発`;
-  dialogBody.innerHTML = `<h2 class="dialog-title">${title}</h2><div class="dialog-meta">${currentCars(train, progress)}・${originText}・${displayStatus(train, progress)}${platform ? `・${platform}番線` : ""}</div>${passengerNote(train) ? `<p class="dialog-note">${passengerNote(train)}</p>` : ""}${nextOperationNotice(train, progress) ? `<p class="dialog-note">${nextOperationNotice(train, progress)}</p>` : ""}<div class="stop-list">${rows.map((row) => `<div class="stop-row ${row.departed ? "departed" : ""}"><strong>${row.name}${row.platform ? ` ${row.platform}番線` : ""}</strong><span>${row.departed ? "発車済み" : `${row.time} 着${row.departTime ? ` / ${row.departTime} 発` : ""}`}</span>${row.note ? `<em>${row.note}</em>` : ""}</div>`).join("")}</div>`;
+  dialogBody.innerHTML = `<div class="dialog-heading"><h2 class="dialog-title">${title}</h2><button class="vehicle-badge" type="button">${train.vehicleId || ""}</button></div><div class="dialog-meta">${currentCars(train, progress)}・${originText}・${displayStatus(train, progress)}${platform ? `・${platform}番線` : ""}</div>${greenCarBadge(train)}${passengerNote(train) ? `<p class="dialog-note">${passengerNote(train)}</p>` : ""}${nextOperationNotice(train, progress) ? `<p class="dialog-note">${nextOperationNotice(train, progress)}</p>` : ""}<div class="stop-list">${rows.map((row) => `<div class="stop-row ${row.departed ? "departed" : ""}"><strong>${row.name}${row.platform ? ` ${row.platform}番線` : ""}</strong><span>${row.departed ? "発車済み" : `${row.time} 着${row.departTime ? ` / ${row.departTime} 発` : ""}`}</span>${row.note ? `<em>${row.note}</em>` : ""}</div>`).join("")}</div>`;
+  dialogBody.querySelector(".vehicle-badge")?.addEventListener("click", () => showVehicleHistory(train));
   dialog.showModal();
 }
 
@@ -1146,11 +1292,27 @@ function setMode(zoomed) {
 }
 
 function applyZoomScale() {
+  activeZoomScale = currentZoomScale();
+  zoomMap.style.transform = activeZoomScale === 1 ? "" : `scale(${activeZoomScale})`;
+  zoomMap.style.transformOrigin = "top left";
+}
+
+function currentZoomScale() {
   const mobileZoom = window.matchMedia("(max-width: 720px)").matches && railPanel.classList.contains("zoomed");
   const baseScale = mobileZoom ? Math.min(0.46, Math.max(0.2, (railPanel.clientWidth - 18) / 1700)) : 1;
-  const scale = railPanel.classList.contains("zoomed") ? baseScale * userZoomScale : baseScale;
-  zoomMap.style.transform = scale === 1 ? "" : `scale(${scale})`;
-  zoomMap.style.transformOrigin = "top left";
+  return railPanel.classList.contains("zoomed") ? baseScale * userZoomScale : baseScale;
+}
+
+function zoomAtClientPoint(clientX, clientY, nextUserScale) {
+  if (!railPanel.classList.contains("zoomed")) return;
+  const rect = railPanel.getBoundingClientRect();
+  const beforeScale = activeZoomScale || currentZoomScale();
+  const focusX = (railPanel.scrollLeft + clientX - rect.left) / beforeScale;
+  const focusY = (railPanel.scrollTop + clientY - rect.top) / beforeScale;
+  userZoomScale = clamp(nextUserScale, 0.55, 4.2);
+  applyZoomScale();
+  railPanel.scrollLeft = focusX * activeZoomScale - (clientX - rect.left);
+  railPanel.scrollTop = focusY * activeZoomScale - (clientY - rect.top);
 }
 
 function clamp(value, min, max) {
@@ -1163,18 +1325,26 @@ function touchDistance(touches) {
   return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 }
 
+function touchCenter(touches) {
+  const a = touches[0];
+  const b = touches[1];
+  return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+}
+
 function setupPinchZoom() {
   railPanel.addEventListener("touchstart", (event) => {
     if (!railPanel.classList.contains("zoomed") || event.touches.length !== 2) return;
     pinchStartDistance = touchDistance(event.touches);
     pinchStartScale = userZoomScale;
+    pinchStartCenter = touchCenter(event.touches);
   }, { passive: true });
 
   railPanel.addEventListener("touchmove", (event) => {
     if (!railPanel.classList.contains("zoomed") || event.touches.length !== 2 || !pinchStartDistance) return;
     event.preventDefault();
-    userZoomScale = clamp(pinchStartScale * (touchDistance(event.touches) / pinchStartDistance), 0.75, 3.5);
-    applyZoomScale();
+    const center = touchCenter(event.touches);
+    pinchStartCenter = center;
+    zoomAtClientPoint(center.x, center.y, pinchStartScale * (touchDistance(event.touches) / pinchStartDistance));
   }, { passive: false });
 
   railPanel.addEventListener("touchend", (event) => {
@@ -1188,8 +1358,7 @@ function setupPinchZoom() {
   railPanel.addEventListener("wheel", (event) => {
     if (!railPanel.classList.contains("zoomed") || !event.ctrlKey) return;
     event.preventDefault();
-    userZoomScale = clamp(userZoomScale * (event.deltaY < 0 ? 1.08 : 0.92), 0.75, 3.5);
-    applyZoomScale();
+    zoomAtClientPoint(event.clientX, event.clientY, userZoomScale * (event.deltaY < 0 ? 1.08 : 0.92));
   }, { passive: false });
 }
 
